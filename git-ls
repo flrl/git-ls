@@ -30,6 +30,7 @@ sub find_files
             opendir(my $dh, $path) || die "openddir $path: $!";
             while (readdir $dh) {
                 next if $_ eq q{.} or $_ eq q{..};
+                next if $_ eq q{.git};
                 push @files, $path eq q{.} ? $_ : "$path/$_";
             }
             closedir $dh;
@@ -47,16 +48,24 @@ sub list_file
     my ($path) = @_;
 
     my @git_log = qx{git rev-list -n 1 --pretty=tformat:%H%x09%an%x09%ci --no-commit-header HEAD -- $path};
-    my $commit = shift @git_log or return;
+    my $commit = shift @git_log;
     die "git log returned multiple lines" if scalar @git_log;
 
-    chomp $commit;
-    my ($sha1, $author_name, $commit_date) = split /\t/, $commit;
+    if ($commit) {
+        chomp $commit;
+        my ($sha1, $author_name, $commit_date) = split /\t/, $commit;
 
-    print ansic(commit_colour($sha1));
-    printf '%-12.12s %-19.19s %s ', $sha1, $author_name, $commit_date;
-    print ansic(0);
-    print $path, "\n";
+        print ansic(commit_colour($sha1));
+        printf '%-12.12s %-19.19s %s ', $sha1, $author_name, $commit_date;
+        print ansic(0);
+        print $path, "\n";
+    }
+    else {
+        print ansic(31);
+        printf '%-59s', 'not committed';
+        print ansic(0);
+        print $path, "\n";
+    }
 }
 
 my @files = find_files('.');
