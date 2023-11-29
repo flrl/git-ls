@@ -1,3 +1,45 @@
 #!/usr/bin/env perl
+# list files and their git properties
+
 use warnings;
 use strict;
+use 5.012;
+
+sub find_files
+{
+    my @files;
+
+    foreach my $path (@_) {
+        if (-d $path) {
+            opendir(my $dh, $path) || die "openddir $path: $!";
+            while (readdir $dh) {
+                next if $_ eq q{.} or $_ eq q{..};
+                push @files, $path eq q{.} ? $_ : "$path/$_";
+            }
+            closedir $dh;
+        }
+        else {
+            push @files, $path;
+        }
+    }
+
+    return @files;
+}
+
+sub list_file
+{
+    my ($path) = @_;
+
+    my @git_log = qx{git rev-list -n 1 --pretty=tformat:%H%x09%an%x09%ci --no-commit-header HEAD -- $path};
+    my $commit = shift @git_log or return;
+    die "git log returned multiple lines" if scalar @git_log;
+
+    chomp $commit;
+    my ($sha1, $author_name, $commit_date) = split /\t/, $commit;
+
+    printf '%-12.12s %-19.19s %s %s', $sha1, $author_name, $commit_date, $path;
+    print "\n";
+}
+
+my @files = find_files('.');
+list_file($_) for @files;
