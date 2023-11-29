@@ -5,6 +5,22 @@ use warnings;
 use strict;
 use 5.012;
 
+sub ansic
+{
+    return "\033["
+           . join(';', map { int $_ } @_)
+           . 'm';
+}
+
+sub commit_colour
+{
+    my ($sha1) = @_;
+    my $c0 = substr($sha1, 0, 1) eq '^' ? 1 : 0;
+
+    no warnings 'portable'; # quiet 64 bit ints please
+    return (38, 5, 17 + hex(substr($sha1, $c0, 16)) % 214);
+}
+
 sub find_files
 {
     my @files;
@@ -37,8 +53,10 @@ sub list_file
     chomp $commit;
     my ($sha1, $author_name, $commit_date) = split /\t/, $commit;
 
-    printf '%-12.12s %-19.19s %s %s', $sha1, $author_name, $commit_date, $path;
-    print "\n";
+    print ansic(commit_colour($sha1));
+    printf '%-12.12s %-19.19s %s ', $sha1, $author_name, $commit_date;
+    print ansic(0);
+    print $path, "\n";
 }
 
 my @files = find_files('.');
