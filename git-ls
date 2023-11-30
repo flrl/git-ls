@@ -5,6 +5,14 @@ use warnings;
 use strict;
 use 5.012;
 
+use open ':encoding(UTF-8)';
+
+use Date::Format;
+
+my %tagcache;
+my %commitcache;
+my %filecache;
+
 sub ansic
 {
     return "\033["
@@ -43,30 +51,94 @@ sub find_files
     return @files;
 }
 
+sub cache_file_info
+{
+    my ($path) = @_;
+
+    my ($sha1, undef) = qx{git rev-list -n1 HEAD -- $path};
+
+    if ($sha1) {
+        if (not exists $commitcache{$sha1}) {
+            my ($info, undef) = qx{git show --pretty=tformat:%an%x09%ci $sha1};
+            chomp $info;
+            my ($author_name, $commit_date) = split /\t/, $info;
+
+            $commitcache{$sha1} = {
+                'author_name' => $author_name,
+                'commit_date' => $commit_date,
+            };
+        }
+    }
+
+    if (not exists $filecache{$path}) {
+        $filecache{$path}->{sha1} = $sha1;
+
+        my ($status, undef) = qx{git status --porcelain -- $path};
+
+        if ($status) {
+            ($status) = split / /, $status;
+
+            if ($status eq '??') {
+                $filecache{$path}->{untracked} = 1;
+            }
+            else {
+                $filecache{$path}->{modified} = 1;
+            }
+        }
+    }
+
+    return;
+}
+
 sub list_file
 {
     my ($path) = @_;
 
-    my @git_log = qx{git rev-list -n 1 --pretty=tformat:%H%x09%an%x09%ci --no-commit-header HEAD -- $path};
-    my $commit = shift @git_log;
-    die "git log returned multiple lines" if scalar @git_log;
+    my $sha1 = $filecache{$path}->{sha1};
+    my $tag = $sha1 ? $tagcache{$sha1} : undef;
+    my $commit = $sha1 ? $commitcache{$sha1} : undef;
+
+    if ($filecache{$path}->{modified}) {
+        $sha1 = '0' x 40;
+        $commit->{author_name} = 'Not Committed Yet';
+        $commit->{commit_date} = time2str('%Y-%m-%d %H:%M:%S %z',
+                                            (stat($path))[9]);
+    }
 
     if ($commit) {
-        chomp $commit;
-        my ($sha1, $author_name, $commit_date) = split /\t/, $commit;
-
         print ansic(commit_colour($sha1));
-        printf '%-12.12s %-19.19s %s ', $sha1, $author_name, $commit_date;
+        printf '%-12.12s %-19.19s %s ',
+               $tag // $sha1,
+               $commit->{author_name},
+               $commit->{commit_date};
+        print ansic(0);
+
+        print $path, "\n";
+    }
+    elsif ($filecache{$path}->{untracked}) {
+        print ansic(31);
+        printf '%-59s', 'untracked';
         print ansic(0);
         print $path, "\n";
     }
     else {
-        print ansic(31);
-        printf '%-59s', 'not committed';
-        print ansic(0);
-        print $path, "\n";
+        # no sha1 but also no status: must be an ignored file
     }
 }
 
+binmode STDOUT, ":encoding(UTF-8)";
+
+# load and cache tags
+open(my $gtpipe, '-|',
+        'git', 'tag', '-l', '--format=%(objectname) %(refname:lstrip=2)')
+    or die "cannot exec git tag: $!";
+while (<$gtpipe>) {
+    chomp;
+    my ($sha1, $tag) = split /\s+/, $_, 2;
+    $tagcache{$sha1} = $tag;
+}
+close $gtpipe;
+
 my @files = find_files('.');
+cache_file_info($_) for @files;
 list_file($_) for @files;
