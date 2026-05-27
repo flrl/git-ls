@@ -8,6 +8,7 @@ use 5.012;
 use open ':encoding(UTF-8)';
 
 use Date::Format;
+use File::Spec::Functions qw(catfile);
 
 my %tagcache;
 my %commitcache;
@@ -39,7 +40,7 @@ sub find_files
             while (readdir $dh) {
                 next if $_ eq q{.} or $_ eq q{..};
                 next if $_ eq q{.git};
-                push @files, $path eq q{.} ? $_ : "$path/$_";
+                push @files, $path eq q{.} ? $_ : catfile($path, $_);
             }
             closedir $dh;
         }
@@ -139,6 +140,6 @@ while (<$gtpipe>) {
 }
 close $gtpipe;
 
-my @files = find_files('.');
+my @files = find_files(@ARGV ? @ARGV : '.');
 cache_file_info($_) for @files;
 list_file($_) for @files;
